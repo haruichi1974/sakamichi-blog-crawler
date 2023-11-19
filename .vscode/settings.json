@@ -1,0 +1,19 @@
+{
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": null,
+    "editor.formatOnPaste": false,
+    "[python]": {
+        "editor.tabSize": 4,
+        "editor.defaultFormatter": "ms-python.black-formatter",
+    },
+    "files.watcherExclude": {
+        "**/venv/**": true,
+        "**/.mypy_cache/**": true
+    },
+    "flake8.args": ["--max-line-length", "150", "--ignore=E203,W503,W504"],
+    "cSpell.words": [
+        "hinata",
+        "nogi",
+        "sakura"
+    ],
+}
