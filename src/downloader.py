@@ -15,50 +15,62 @@ class Downloader:
     def __init__(
         self,
         client: httpx.AsyncClient,
-        infos: Iterable[ImageInfo],
-        workers: int = 10,
+        num_workers: int = 10,
         retry_count: int = 3,
     ):
         self.client = client
-        self.infos = infos
-        self.num_workers = workers
         self.retry_count = retry_count
 
         self.todo: asyncio.Queue = asyncio.Queue()
+        self.workers = [
+            asyncio.create_task(self._worker(i)) for i in range(num_workers)
+        ]
 
-    async def put_todo(self, infos: Iterable[ImageInfo]):
-        for info in infos:
-            await self.todo.put(info)
-
-    async def run(self) -> None:
-        await self.put_todo(self.infos)
-        workers = [asyncio.create_task(self.worker()) for _ in range(self.num_workers)]
-        await self.todo.join()
-
-        for worker in workers:
-            worker.cancel()
-
-    async def worker(self):
+    async def _worker(self, worker_index: int):
         while True:
             try:
-                await self.process_one()
+                await self._process_one()
             except asyncio.CancelledError:
                 return
 
-    async def process_one(self):
+    async def _process_one(self):
         info = await self.todo.get()
+        print(info)
         for _ in range(self.retry_count):
             try:
-                await self.download(info)
+                await self._download(info)
                 break
             except Exception as e:
                 print(e)
         self.todo.task_done()
 
-    async def download(self, info: ImageInfo):
+    async def _download(self, info: ImageInfo):
         await asyncio.sleep(0.1)
 
         res = await self.client.get(info["url"], follow_redirects=True)
 
         with open(info["path"], "wb") as f:
             f.write(res.content)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.todo.join()
+        for worker in self.workers:
+            worker.cancel()
+
+    async def put_todo(self, infos: Iterable[ImageInfo]):
+        for info in infos:
+            await self.todo.put(info)
+
+
+async def example():
+    async with httpx.AsyncClient() as client:
+        async with Downloader(client, 5, 1) as downloader:
+            await downloader.put_todo()
+            pass
+
+
+if __name__ == "__main__":
+    asyncio.run(example(), debug=True)
