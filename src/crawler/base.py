@@ -1,0 +1,177 @@
+import asyncio
+import os
+import re
+from datetime import datetime
+from typing import Iterable, List, Optional, TypedDict
+
+import httpx
+from bs4 import BeautifulSoup, Tag
+
+from src.requests import create_get_req
+
+pattern = "http.*"
+repatter = re.compile(pattern)
+
+base_dir = os.path.join(os.getcwd(), "data")
+
+
+class ImageInfo(TypedDict):
+    url: str
+    path: str
+
+
+class Crawler:
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        num_workers: int = 20,
+        retry_count: int = 3,
+    ):
+        self.async_get = create_get_req(client)
+        self.retry_count = retry_count
+
+        self.todo: asyncio.Queue = asyncio.Queue(maxsize=num_workers * 3)
+        self.workers = [
+            asyncio.create_task(self._worker(i)) for i in range(num_workers)
+        ]
+
+    async def _worker(self, worker_index: int):
+        while True:
+            try:
+                await self._process_one()
+            except asyncio.CancelledError:
+                return
+
+    async def _process_one(self):
+        info = await self.todo.get()
+        await self._download(info)
+        self.todo.task_done()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.todo.join()
+        for worker in self.workers:
+            worker.cancel()
+
+    async def put_todo(self, infos: Iterable[ImageInfo]):
+        for info in infos:
+            await self.todo.put(info)
+
+    async def _download(self, info: ImageInfo):
+        await asyncio.sleep(0.1)
+        print("download", info)
+        res = await self.async_get(info["url"])
+        if res is None:
+            return
+
+        with open(info["path"], "wb") as f:
+            f.write(res.content)
+
+
+class Base:
+    def __init__(
+        self,
+        client: httpx.AsyncClient,
+        crawler: Crawler,
+        kanji_name: str,
+        english_name: str,
+        code: str,
+        no: int,
+        base_url: str,
+        group: str,
+        date: Optional[datetime] = None,
+    ):
+        self.async_get = create_get_req(client)
+        self.crawler = crawler
+
+        self.kanji_name = kanji_name
+        self.english_name = english_name
+        self.code = code
+        self.count: int = 0
+        self.date: datetime = datetime.now()
+        self.latest_date: datetime = date if date else datetime(2000, 1, 1)
+        self.No: int = no if no else 0
+        self.base_url = base_url
+        self.dir = os.path.join(base_dir, group, kanji_name)
+        make_dir(self.dir)
+        self.is_latest_post = True
+        self.latest_post_date: datetime = date if date else datetime.now()
+        self.latest_post_no: int = no if no else 0
+
+    def __str__(self):
+        return f"{self.english_name}, new : {self.count}, total : {self.count_files()}"
+
+    def __del__(self) -> None:
+        try:
+            os.rmdir(self.dir)
+        except OSError as e:
+            e
+            pass
+
+    async def run(self):
+        pass
+
+    def collect_image(self, date: datetime, soup: BeautifulSoup) -> List[ImageInfo]:
+        print(self.english_name, date)
+        label = self.english_name + "-" + date.strftime("%Y%m%d")
+        path = os.path.join(self.dir, label)
+
+        imgs = soup.select("img")
+
+        list_: List[ImageInfo] = []
+        for img in imgs:
+            self._check_no(date)
+            try:
+                res = self._get_img(img, path)
+                self.count += 1
+                list_.append(res)
+            except Exception as e:
+                print(e)
+
+        return list_
+
+    def _get_img(self, img: Tag, path: str) -> ImageInfo:
+        href = img.get("src")
+        if self._check_full_path(href):
+            url = href
+        else:
+            url = self.base_url + href
+
+        if ".jpg" in url or ".jpeg" in url or ".JPG" in url or ".JPEG" in url:
+            path += str(self.No).zfill(4) + ".jpeg"
+        elif ".png" in url or ".PNG" in url:
+            path += str(self.No).zfill(4) + ".png"
+        else:
+            raise Exception
+
+        return {"url": url, "path": path}
+
+    def _check_full_path(self, s: str) -> bool:
+        result = repatter.search(s)
+        return bool(result)
+
+    def _check_no(self, date: datetime) -> None:
+        if self.is_latest_post:
+            self.latest_post_no = self.No + 1
+            self.latest_post_date = date
+        if self.date.date() != date.date():
+            if self.is_latest_post:
+                self.is_latest_post = False
+
+            self.No = 0
+            self.date = date
+
+        self.No += 1
+
+    def count_files(self) -> int:
+        return len(os.listdir(self.dir))
+
+    def check_date(self, date: datetime):
+        return self.latest_date >= date
+
+
+def make_dir(path: str):
+    if not os.path.isdir(path):
+        os.makedirs(path)
