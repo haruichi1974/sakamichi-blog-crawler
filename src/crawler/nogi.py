@@ -38,14 +38,14 @@ class Collector(Base):
         )
 
     async def run(self):
-        await self.page(0)
+        await super().run(self.page, 0)
 
     async def page(self, offset: int):
         url = (
             base_url
             + f"/s/n46/api/list/blog?rw={str(limit)}&st={str(offset)}&ct={self.code}&callback=res"
         )
-        res = await self.async_get(url)
+        res = await self.async_get(url, self.logger)
         if res is None:
             return
 
@@ -64,17 +64,13 @@ class Collector(Base):
 
             if self.check_date(date):
                 return
-            try:
-                await self.article(soup, date)
-            except Exception as e:
-                print(e)
-                return
 
-        await asyncio.sleep(0.1)
+            await self.article(soup, date)
+
         await self.page(offset + limit)
 
     async def article(self, article: BeautifulSoup, date: datetime):
-        await self.crawler.put_todo(self.collect_image(date, article))
+        await self.crawler.put_todo(self.collect_image(date, article), self.logger)
 
 
 async def get_member_info(client: httpx.AsyncClient):

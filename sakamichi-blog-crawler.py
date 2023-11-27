@@ -3,7 +3,11 @@ import time
 
 import httpx
 
+from src.args import get_option
 from src.crawler import base, hinata, nogi, sakura
+from src.logger import create_logger
+
+logger = create_logger("main")
 
 
 async def async_run():
@@ -35,10 +39,11 @@ async def async_run():
 
 def main() -> None:
     start = time.perf_counter()
-    asyncio.run(async_run(), debug=True)
+    args = get_option()
+    asyncio.run(async_run(), debug=args.debug)
     end = time.perf_counter()
 
-    print(f"Done in {end - start:.2f}s")
+    logger.info(f"Done in {end - start:.2f}s")
 
 
 if __name__ == "__main__":

@@ -36,11 +36,11 @@ class Collector(Base):
         )
 
     async def run(self):
-        await self.page(0)
+        await super().run(self.page, 0)
 
     async def page(self, page_no: int):
         url = base_url + f"/s/s46/diary/blog/list?page={str(page_no)}&ct={self.code}"
-        res = await self.async_get(url)
+        res = await self.async_get(url, self.logger)
         if res is None:
             return
         soup = BeautifulSoup(res.text, "html.parser")
@@ -55,23 +55,19 @@ class Collector(Base):
             date = datetime.strptime(date_tag.text, "%Y/%m/%d")
             if self.check_date(date):
                 return
-            try:
-                await self.article(path, date)
-            except Exception as e:
-                print(e)
-                return
 
-        await asyncio.sleep(0.1)
+            await self.article(path, date)
+
         await self.page(page_no + 1)
 
     async def article(self, path: str, date: datetime):
         url = self.base_url + path
-        res = await self.async_get(url)
+        res = await self.async_get(url, self.logger)
         if res is None:
             return
         soup = BeautifulSoup(res.text, "html.parser")
         article = soup.find("div", {"class": "box-article"})
-        await self.crawler.put_todo(self.collect_image(date, article))
+        await self.crawler.put_todo(self.collect_image(date, article), self.logger)
 
 
 async def get_member_info(client: httpx.AsyncClient):

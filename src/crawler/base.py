@@ -7,6 +7,7 @@ from typing import Iterable, List, Optional, TypedDict
 import httpx
 from bs4 import BeautifulSoup, Tag
 
+from src.logger import Logger, create_logger
 from src.requests import create_get_req
 
 pattern = "http.*"
@@ -38,13 +39,13 @@ class Crawler:
     async def _worker(self, worker_index: int):
         while True:
             try:
-                await self._process_one()
+                await self._process_one(worker_index)
             except asyncio.CancelledError:
                 return
 
-    async def _process_one(self):
-        info = await self.todo.get()
-        await self._download(info)
+    async def _process_one(self, worker_index: int):
+        info, logger = await self.todo.get()
+        await self._download(info, logger, worker_index)
         self.todo.task_done()
 
     async def __aenter__(self):
@@ -55,14 +56,12 @@ class Crawler:
         for worker in self.workers:
             worker.cancel()
 
-    async def put_todo(self, infos: Iterable[ImageInfo]):
+    async def put_todo(self, infos: Iterable[ImageInfo], logger: Logger):
         for info in infos:
-            await self.todo.put(info)
+            await self.todo.put((info, logger))
 
-    async def _download(self, info: ImageInfo):
-        await asyncio.sleep(0.1)
-        print("download", info)
-        res = await self.async_get(info["url"])
+    async def _download(self, info: ImageInfo, logger: Logger, worker_index: int):
+        res = await self.async_get(info["url"], logger=logger, worker=worker_index)
         if res is None:
             return
 
@@ -83,6 +82,7 @@ class Base:
         group: str,
         date: Optional[datetime] = None,
     ):
+        self.logger = create_logger(english_name)
         self.async_get = create_get_req(client)
         self.crawler = crawler
 
@@ -110,11 +110,15 @@ class Base:
             e
             pass
 
-    async def run(self):
-        pass
+    async def run(self, func, *args):
+        self.logger.info({"message": "start"})
+        await func(*args)
+        self.logger.info({"message": "end", "count": self.count})
 
     def collect_image(self, date: datetime, soup: BeautifulSoup) -> List[ImageInfo]:
-        print(self.english_name, date)
+        self.logger.info(
+            {"message": "collect image", "date": date.strftime("%Y-%m-%d")}
+        )
         label = self.english_name + "-" + date.strftime("%Y%m%d")
         path = os.path.join(self.dir, label)
 
@@ -123,18 +127,20 @@ class Base:
         list_: List[ImageInfo] = []
         for img in imgs:
             self._check_no(date)
-            try:
-                res = self._get_img(img, path)
-                self.count += 1
-                list_.append(res)
-            except Exception as e:
-                print(e)
+            res = self._get_img(img, path)
+            if res is None:
+                continue
+
+            self.count += 1
+            list_.append(res)
 
         return list_
 
-    def _get_img(self, img: Tag, path: str) -> ImageInfo:
+    def _get_img(self, img: Tag, path: str) -> ImageInfo | None:
         href = img.get("src")
-        if self._check_full_path(href):
+        if href is None:
+            return None
+        elif self._check_full_path(href):
             url = href
         else:
             url = self.base_url + href
@@ -144,7 +150,8 @@ class Base:
         elif ".png" in url or ".PNG" in url:
             path += str(self.No).zfill(4) + ".png"
         else:
-            raise Exception
+            self.logger.error(f"not image ext : {url}")
+            return None
 
         return {"url": url, "path": path}
 
