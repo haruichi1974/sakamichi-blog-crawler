@@ -1,12 +1,15 @@
-import asyncio
 import json
 from datetime import datetime
 
 import httpx
 from bs4 import BeautifulSoup
-from pykakasi import kakasi
+
+from src.recorder import Recorder, date_format
 
 from .base import Base, Crawler
+
+recorder = Recorder()
+record_getter = recorder.call_getter("nogi")
 
 base_url = "https://www.nogizaka46.com"
 headers = {"Accept": "application/json"}
@@ -30,11 +33,10 @@ class Collector(Base):
         kanji_name: str,
         english_name: str,
         code: str,
-        no: int,
         date: datetime | None = None,
     ):
         super().__init__(
-            client, crawler, kanji_name, english_name, code, no, base_url, "nogi", date
+            client, crawler, kanji_name, english_name, code, base_url, "nogi", date
         )
 
     async def run(self):
@@ -88,24 +90,34 @@ async def get_member_info(client: httpx.AsyncClient):
             english = member["english_name"].split(" ")
             english = english[1] + "_" + english[0]
             code = member["code"]
+
+            record = record_getter(code)
+            date = None
+            if record is not None:
+                date = datetime.strptime(record.get("date"), date_format)
+
             list_.append(
                 {
                     "kanji_name": member["name"],
                     "english_name": english,
                     "code": code,
-                    "no": 0,
-                    "date": None,
+                    "date": date,
                 }
             )
 
     for c in const_list:
+        record = record_getter(c["code"])
+
+        date = None
+        if record is not None:
+            date = datetime.strptime(record.get("date"), date_format)
+
         list_.append(
             {
                 "kanji_name": c["kanji"],
                 "english_name": c["english"],
                 "code": c["code"],
-                "no": 0,
-                "date": None,
+                "date": date,
             }
         )
 

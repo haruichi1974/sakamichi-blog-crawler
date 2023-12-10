@@ -163,3 +163,5 @@ Pipfile
 Pipfile.lock
 
 data/
+
+record.json

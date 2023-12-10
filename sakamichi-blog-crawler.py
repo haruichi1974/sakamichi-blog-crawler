@@ -6,8 +6,11 @@ import httpx
 from src.args import get_option
 from src.crawler import base, hinata, nogi, sakura
 from src.logger import create_logger
+from src.recorder import Recorder
 
 logger = create_logger("main")
+
+recorder = Recorder()
 
 
 async def async_run():
@@ -41,6 +44,7 @@ def main() -> None:
     start = time.perf_counter()
     args = get_option()
     asyncio.run(async_run(), debug=args.debug)
+    recorder.dump_json()
     end = time.perf_counter()
 
     logger.info(f"Done in {end - start:.2f}s")

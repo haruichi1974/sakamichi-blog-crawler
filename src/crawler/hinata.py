@@ -1,11 +1,15 @@
-import asyncio
 from datetime import datetime
 
 import httpx
 from bs4 import BeautifulSoup
 from pykakasi import kakasi
 
+from src.recorder import Recorder, date_format
+
 from .base import Base, Crawler
+
+recorder = Recorder()
+record_getter = recorder.call_getter("hinata")
 
 kks = kakasi()
 
@@ -20,7 +24,6 @@ class Collector(Base):
         kanji_name: str,
         english_name: str,
         code: str,
-        no: int,
         date: datetime | None = None,
     ):
         super().__init__(
@@ -29,7 +32,6 @@ class Collector(Base):
             kanji_name,
             english_name,
             code,
-            no,
             base_url,
             "hinata",
             date,
@@ -87,23 +89,31 @@ async def get_member_info(client: httpx.AsyncClient):
         last = kks.convert(last)[0]["hepburn"]
         english = first + "_" + last
 
+        record = record_getter(code)
+        date = None
+        if record is not None:
+            date = datetime.strptime(record.get("date"), date_format)
+
         list_.append(
             {
                 "kanji_name": kanji,
                 "english_name": english,
                 "code": code,
-                "no": 0,
-                "date": None,
+                "date": date,
             }
         )
+
+    record = record_getter("000")
+    date = None
+    if record is not None:
+        date = datetime.strptime(record.get("date"), date_format)
 
     list_.append(
         {
             "kanji_name": "ポカ",
             "english_name": "poka",
-            "code": 000,
-            "no": 0,
-            "date": None,
+            "code": "000",
+            "date": date,
         }
     )
 

@@ -8,7 +8,10 @@ import httpx
 from bs4 import BeautifulSoup, Tag
 
 from src.logger import Logger, create_logger
+from src.recorder import Recorder, date_format
 from src.requests import create_get_req
+
+recorder = Recorder()
 
 pattern = "http.*"
 repatter = re.compile(pattern)
@@ -77,7 +80,6 @@ class Base:
         kanji_name: str,
         english_name: str,
         code: str,
-        no: int,
         base_url: str,
         group: str,
         date: Optional[datetime] = None,
@@ -88,17 +90,15 @@ class Base:
 
         self.kanji_name = kanji_name
         self.english_name = english_name
+        self.group = group
         self.code = code
         self.count: int = 0
         self.date: datetime = datetime.now()
         self.latest_date: datetime = date if date else datetime(2000, 1, 1)
-        self.No: int = no if no else 0
+        self.No: int = 0
         self.base_url = base_url
         self.dir = os.path.join(base_dir, group, kanji_name)
         make_dir(self.dir)
-        self.is_latest_post = True
-        self.latest_post_date: datetime = date if date else datetime.now()
-        self.latest_post_no: int = no if no else 0
 
     def __str__(self):
         return f"{self.english_name}, new : {self.count}, total : {self.count_files()}"
@@ -113,6 +113,13 @@ class Base:
     async def run(self, func, *args):
         self.logger.info({"message": "start"})
         await func(*args)
+        recorder.record[self.group][self.code] = {
+            "name": self.kanji_name,
+            "total": self.count_files(),
+            "date": datetime.now()
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+            .strftime(date_format),
+        }
         self.logger.info({"message": "end", "count": self.count})
 
     def collect_image(self, date: datetime, soup: BeautifulSoup) -> List[ImageInfo]:
@@ -160,13 +167,7 @@ class Base:
         return bool(result)
 
     def _check_no(self, date: datetime) -> None:
-        if self.is_latest_post:
-            self.latest_post_no = self.No + 1
-            self.latest_post_date = date
         if self.date.date() != date.date():
-            if self.is_latest_post:
-                self.is_latest_post = False
-
             self.No = 0
             self.date = date
 
